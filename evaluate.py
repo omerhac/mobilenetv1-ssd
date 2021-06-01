@@ -79,19 +79,19 @@ def postprocess_example(prediction, width, height):
     labels = labels[0]
     scores = scores[0]
 
-    # process boxes (
+    # process boxes (comes from model as xmax, ymax, xmin, ymin)
     def process_box(box):
-        y_min = box[0] * height
-        x_min = box[1] * width
-        y_max = box[2] * height
-        x_max = box[3] * width
+        x_min = box[0] * width
+        y_min = box[1] * height
+        x_max = box[2] * width
+        y_max = box[3] * height
         w = x_max - x_min
         h = y_max - y_min
-        return x_min, y_min, w, h
+        return [x_min.numpy(), y_min.numpy(), x_max.numpy(), y_max.numpy()]
 
     boxes = [process_box(box) for box in boxes]
 
-    return  boxes, labels, scores
+    return boxes, labels, scores
 
 
 @torch.no_grad()
@@ -120,14 +120,14 @@ def evaluate(model_path, images_dir, class_names, output_dir):
 
         # predict
         result = model(image_tensor)
-        boxes, labels, scores = postprocess_example(prediction, width, height)
+        boxes, labels, scores = postprocess_example(result, width, height)
 
         labels = [int(label.numpy()) for label in labels]
-        ####
+        """
         b = boxes[0]
         b = [int(a.numpy()) for a in b]
         plt.imsave(output_dir + '/check.jpg', image[b[0]:b[0]+b[2],b[1]:b[1]+b[3],:])
-        ####
+        """
 
         # draw and save boxes
         drawn_image = draw_boxes(image, boxes, labels, scores, class_names)
@@ -137,11 +137,11 @@ def evaluate(model_path, images_dir, class_names, output_dir):
 if __name__ == '__main__':
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
-    preprocess_dataset('datasets/val2017')
+
     with open('datasets/annotations/instances_val2017.json') as file:
         annotations = json.load(file)
     class_names = annotations['categories']
 
-    class_names = {key: class_names[key]['name'] for key in range(len(class_names))}
+    class_names = {key+1: class_names[key]['name'] for key in range(len(class_names))}
     print(class_names)
     evaluate(model_path, images_dir, class_names, 'output')
