@@ -56,6 +56,43 @@ def preprocess_dataset(dataset_dir, save_dir=None):
         np.save(os.path.join(save_dir, image_name), image)  # save
 
 
+def postprocess_predictions(predictions_dir, save_dir):
+    """Postprocess all model predictions and save them to save_dir"""
+
+    pred_paths = glob.glob(predictions_dir + '/*.npy')
+
+    if not save_dir:
+        save_dir = predictions_dir + '/postprocessed'
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
+    for pred_path in pred_paths:
+        pred = np.load(pred_path)
+        pp_pred = postprocess_example(pred)
+
+
+def postprocess_example(prediction, width, height):
+    """Postprocess and SSD prediction. """
+    # unpack
+    boxes, labels, scores = prediction
+    boxes = boxes[0]
+    labels = labels[0]
+    scores = scores[0]
+
+    # process boxes (
+    def process_box(box):
+        y_min = box[0] * height
+        x_min = box[1] * width
+        y_max = box[2] * height
+        x_max = box[3] * width
+        w = x_max - x_min
+        h = y_max - y_min
+        return x_min, y_min, w, h
+
+    boxes = [process_box(box) for box in boxes]
+
+    return  boxes, labels, scores
+
 
 @torch.no_grad()
 def evaluate(model_path, images_dir, class_names, output_dir):
@@ -83,30 +120,14 @@ def evaluate(model_path, images_dir, class_names, output_dir):
 
         # predict
         result = model(image_tensor)
-        # unpack
-        boxes, labels, scores = result
-        boxes = boxes[0]
-        labels = labels[0]
-        scores = scores[0]
+        boxes, labels, scores = postprocess_example(prediction, width, height)
 
-        # process boxes
-        def process_box(box):
-            y_min = box[0] * height
-            x_min = box[1] * width
-            y_max = box[2] * height
-            x_max = box[3] * width
-            w = x_max - x_min
-            h = y_max - y_min
-            return x_min, y_min, w, h
-
-        boxes = [process_box(box) for box in boxes]
         labels = [int(label.numpy()) for label in labels]
         ####
         b = boxes[0]
         b = [int(a.numpy()) for a in b]
         plt.imsave(output_dir + '/check.jpg', image[b[0]:b[0]+b[2],b[1]:b[1]+b[3],:])
         ####
-
 
         # draw and save boxes
         drawn_image = draw_boxes(image, boxes, labels, scores, class_names)
