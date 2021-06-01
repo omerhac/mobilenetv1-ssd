@@ -38,6 +38,25 @@ def maybe_resize(img, dims):
     return img
 
 
+def preprocess_dataset(dataset_dir, save_dir=None):
+    """Preprocess all the images in the dataset and save them as arrays to save_dir. Reshape to (300,300),
+    Zero mean, and scale"""
+
+    image_paths = glob.glob(dataset_dir + '/*.jpg')
+
+    if not save_dir:
+        save_dir = dataset_dir + '/preprocessed'
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
+    for image_path in image_paths:
+        image_name = os.path.basename(image_path).split('.')[0]
+        image = np.array(Image.open(image_path))
+        image = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)  # mobilenet specs
+        np.save(os.path.join(save_dir, image_name), image)  # save
+
+
+
 @torch.no_grad()
 def evaluate(model_path, images_dir, class_names, output_dir):
     """Evaluate model on images"""
@@ -45,7 +64,7 @@ def evaluate(model_path, images_dir, class_names, output_dir):
     device = torch.device('cpu')
     # build mobilenetv1 ssd and cast to cpu
     # load model weights
-    model = torch.load(model_path, map_location=device)
+    model = torch.load(model_path, map_location=lambda storage, loc: storage)
     model = model.to(device)
 
     # prepare model for inference
@@ -55,7 +74,7 @@ def evaluate(model_path, images_dir, class_names, output_dir):
     # predict
     for i, image_path in enumerate(image_paths[2:]):
         # load and preprocess image
-        image = np.array(Image.open(image_path).convert("RGB"))
+        image = np.array(Image.open(image_path))
         height, width = image.shape[:2]
         image_proc = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)
         image_tensor = torch.tensor(image_proc, dtype=torch.float32)
@@ -95,9 +114,9 @@ def evaluate(model_path, images_dir, class_names, output_dir):
 
 
 if __name__ == '__main__':
-    model_path = 'trained_models/mobilenetv1_ssd.model'
+    model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
-
+    preprocess_dataset('datasets/val2017')
     with open('datasets/annotations/instances_val2017.json') as file:
         annotations = json.load(file)
     class_names = annotations['categories']
