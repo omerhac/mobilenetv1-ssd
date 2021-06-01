@@ -1,3 +1,4 @@
 /.venv
 /datasets
 /trained_models
+/output
