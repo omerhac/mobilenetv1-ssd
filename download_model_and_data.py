@@ -49,14 +49,14 @@ def download_dataset_annotations(dataset_url, datasets_dir):
 
 
 if __name__ == '__main__':
-    model_url = 'https://github.com/lufficc/SSD/releases/download/1.2/mobilenet_v3_ssd320_voc0712.pth'
+    model_url = 'https://zenodo.org/record/3239977/files/ssd_mobilenet_v1.pytorch'
     datasets_url = 'http://images.cocodataset.org/zips/val2017.zip'
     annotations_url = 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
 
     # download model
-    download_model(model_url, 'models', 'mobilenetv3_ssd.model')
+    download_model(model_url, 'trained_models', 'mobilenetv1_ssd.pytorch')
     # download dataset
-    download_dataset_images(datasets_url, 'datasets', 'val2017')
-    download_dataset_annotations(annotations_url, 'datasets')
+    #download_dataset_images(datasets_url, 'datasets', 'val2017')
+    #download_dataset_annotations(annotations_url, 'datasets')
 
 

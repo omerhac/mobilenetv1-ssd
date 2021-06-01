@@ -4,12 +4,12 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from anchor_generator import create_ssd_anchors
-from utils import Conv2d_tf
-from utils import BatchNorm2d
-from utils import BiasAdd
-from utils import nms
-from utils import decode_boxes
+from models.anchor_generator import create_ssd_anchors
+from models.utils import Conv2d_tf
+from models.utils import BatchNorm2d
+from models.utils import BiasAdd
+from models.utils import nms
+from models.utils import decode_boxes
 
 
 def conv_bn(inp, oup, stride):
