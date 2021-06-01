@@ -123,11 +123,6 @@ def evaluate(model_path, images_dir, class_names, output_dir):
         boxes, labels, scores = postprocess_example(result, width, height)
 
         labels = [int(label.numpy()) for label in labels]
-        """
-        b = boxes[0]
-        b = [int(a.numpy()) for a in b]
-        plt.imsave(output_dir + '/check.jpg', image[b[0]:b[0]+b[2],b[1]:b[1]+b[3],:])
-        """
 
         # draw and save boxes
         drawn_image = draw_boxes(image, boxes, labels, scores, class_names)
@@ -138,10 +133,9 @@ if __name__ == '__main__':
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
 
-    with open('datasets/annotations/instances_val2017.json') as file:
-        annotations = json.load(file)
-    class_names = annotations['categories']
+    with open('coco_labels.txt') as file:
+        coco_labels = file.read().splitlines()
 
-    class_names = {key+1: class_names[key]['name'] for key in range(len(class_names))}
+    class_names = {key+1: coco_labels[key] for key in range(len(coco_labels))}
     print(class_names)
     evaluate(model_path, images_dir, class_names, 'output')
