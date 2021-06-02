@@ -12,6 +12,7 @@ from coco import COCO
 from tqdm import tqdm
 from pycocotools import coco
 from pycocotools.cocoeval import COCOeval
+import time
 
 
 # disable source change warning
@@ -118,7 +119,7 @@ def postprocess_example(prediction, image_name, dataset_meta):
 
 @torch.no_grad()
 def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=False):
-    """Evaluate model on images.
+    """Main benchmark method.
     Args:
         model_path: path to serialized model
         images_dir: path to images directory
@@ -127,6 +128,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
         save_images: flag, whether to save images with bboxes
     """
 
+    start_time = time.time()
     device = torch.device('cpu')
     # build mobilenetv1 ssd and cast to cpu
     # load model weights
@@ -139,7 +141,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
     results = []
 
     # predict
-    for i, image_path in tqdm(enumerate(image_paths[:5]), total=len(image_paths)):
+    for i, image_path in tqdm(enumerate(image_paths), total=len(image_paths)):
         # load image
         image = np.array(Image.open(image_path))
         image_name = os.path.basename(image_path)
@@ -154,7 +156,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
         detection_results = postprocess_example(result, image_name, dataset_meta)
         results += detection_results  # aggregate final results
 
-        # save detection results if save_images is True and output_dir is provided
+        # save image with bboxes if save_images is True and output_dir is provided
         if save_images:
             assert output_dir, 'output_dir should be provided for saving images with bboxes'
 
@@ -172,10 +174,22 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
             except:
                 print(f'Cant draw {image_name} boxes because its grayscale')
 
+    print(f'Finished inference in {time.time() - start_time} seconds.')
+
     # save if needed
     if output_dir:
         with open(f'{output_dir}/detection_results.json', 'w') as file:
             json.dump(results, file)
+
+        # evaluate metrics
+        evaluate_results(f'{output_dir}/detection_results.json', dataset_meta.annotaion_filepath)
+    else:
+        with open('.detection_results_temp.json', 'w') as file:
+            json.dump(results, file)
+
+        # evaluate metrics
+        evaluate_results('.detection_results_temp.json', dataset_meta.annotaion_filepath)
+        os.remove('.detection_results_temp.json')
 
 
 def evaluate_results(detection_results, annotation_filepath):
@@ -193,5 +207,5 @@ if __name__ == '__main__':
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
 
-    evaluate_results('output/detection_results.json', 'datasets/annotations/instances_val2017.json')
     evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=False)
+

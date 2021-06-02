@@ -15,6 +15,7 @@ class COCO:
         self.label_list = []
         self.image_ids = []
         self.image_sizes = []
+        self.annotaion_filepath = annotation_filepath
 
         # get labels
         with open(labels_filepath) as file:
