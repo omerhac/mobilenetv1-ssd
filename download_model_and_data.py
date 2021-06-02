@@ -56,7 +56,7 @@ if __name__ == '__main__':
     # download model
     download_model(model_url, 'trained_models', 'mobilenetv1_ssd.pytorch')
     # download dataset
-    #download_dataset_images(datasets_url, 'datasets', 'val2017')
-    #download_dataset_annotations(annotations_url, 'datasets')
+    download_dataset_images(datasets_url, 'datasets', 'val2017')
+    download_dataset_annotations(annotations_url, 'datasets')
 
 
