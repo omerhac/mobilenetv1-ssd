@@ -7,8 +7,7 @@ import os
 import cv2
 import warnings
 from torch.serialization import SourceChangeWarning
-import json
-import matplotlib.pyplot as plt
+
 
 # disable source change warning
 warnings.filterwarnings("ignore", category=SourceChangeWarning)
@@ -119,8 +118,11 @@ def evaluate(model_path, images_dir, class_names, output_dir):
         labels = [int(label.numpy()) for label in labels]
 
         # draw and save boxes
-        drawn_image = draw_boxes(image, boxes, labels, scores, class_names)
-        Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
+        try:
+            drawn_image = draw_boxes(image, boxes, labels, scores, class_names)
+            Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
+        except:
+            print(f'Cant draw {image_name} boxes because its grayscale')
 
 
 if __name__ == '__main__':
