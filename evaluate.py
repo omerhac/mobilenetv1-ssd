@@ -1,4 +1,5 @@
 import torch
+import json
 import glob
 from PIL import Image
 from vizer.draw import draw_boxes
@@ -138,7 +139,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
     results = []
 
     # predict
-    for i, image_path in tqdm(enumerate(image_paths), total=len(image_paths)):
+    for i, image_path in tqdm(enumerate(image_paths[:5]), total=len(image_paths)):
         # load image
         image = np.array(Image.open(image_path))
         image_name = os.path.basename(image_path)
@@ -171,11 +172,20 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
             except:
                 print(f'Cant draw {image_name} boxes because its grayscale')
 
-    results = np.stack(detection_results)
-
     # save if needed
     if output_dir:
-        np.save(f'{output_dir}/detection_results', results)
+        with open(f'{output_dir}/detection_results.json', 'w') as file:
+            json.dump(results, file)
+
+
+def evaluate_results(detection_results, annotation_filepath):
+    """Evaluate metrics of detection results"""
+    coco_GT = coco.COCO(annotation_file=annotation_filepath)
+    coco_DT = coco_GT.loadRes(detection_results)
+    coco_eval = COCOeval(cocoGt=coco_GT, cocoDt=coco_DT, iouType='bbox')
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
 
 
 if __name__ == '__main__':
@@ -183,4 +193,5 @@ if __name__ == '__main__':
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
 
+    evaluate_results('output/detection_results.json', 'datasets/annotations/instances_val2017.json')
     evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=False)
