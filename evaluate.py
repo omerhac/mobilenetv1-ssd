@@ -40,7 +40,7 @@ def maybe_resize(img, dims):
 
 def preprocess_dataset(dataset_dir, save_dir=None):
     """Preprocess all the images in the dataset and save them as arrays to save_dir. Reshape to (300,300),
-    Zero mean, and scale"""
+    Zero mean,  scale and transpose to CHW"""
 
     image_paths = glob.glob(dataset_dir + '/*.jpg')
 
@@ -56,19 +56,13 @@ def preprocess_dataset(dataset_dir, save_dir=None):
         np.save(os.path.join(save_dir, image_name), image)  # save
 
 
-def postprocess_predictions(predictions_dir, save_dir):
-    """Postprocess all model predictions and save them to save_dir"""
-
-    pred_paths = glob.glob(predictions_dir + '/*.npy')
-
-    if not save_dir:
-        save_dir = predictions_dir + '/postprocessed'
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
-
-    for pred_path in pred_paths:
-        pred = np.load(pred_path)
-        pp_pred = postprocess_example(pred)
+def transform_coco_box_for_drawing(box):
+    """Transform [xmin, ymin, w,h] tensor to [xmin, ymin, xmax, ymax] tuple"""
+    x_min = int(box[0])
+    y_min = int(box[1])
+    x_max = x_min + int(box[2])
+    y_max = y_min + int(box[3])
+    return x_min, y_min, x_max, y_max
 
 
 def postprocess_example(prediction, width, height):
@@ -87,7 +81,7 @@ def postprocess_example(prediction, width, height):
         y_max = box[3] * height
         w = x_max - x_min
         h = y_max - y_min
-        return [x_min.numpy(), y_min.numpy(), x_max.numpy(), y_max.numpy()]
+        return np.array([x_min, y_min, w, h])
 
     boxes = [process_box(box) for box in boxes]
 
@@ -121,7 +115,7 @@ def evaluate(model_path, images_dir, class_names, output_dir):
         # predict
         result = model(image_tensor)
         boxes, labels, scores = postprocess_example(result, width, height)
-
+        boxes = [transform_coco_box_for_drawing(box) for box in boxes]
         labels = [int(label.numpy()) for label in labels]
 
         # draw and save boxes
