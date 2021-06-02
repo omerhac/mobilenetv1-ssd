@@ -7,7 +7,7 @@ import os
 import cv2
 import warnings
 from torch.serialization import SourceChangeWarning
-
+from coco import COCO
 
 # disable source change warning
 warnings.filterwarnings("ignore", category=SourceChangeWarning)
@@ -102,7 +102,7 @@ def evaluate(model_path, images_dir, class_names, output_dir):
     image_paths = glob.glob(images_dir + '/*.jpg')
 
     # predict
-    for i, image_path in enumerate(image_paths[2:]):
+    for i, image_path in enumerate(image_paths):
         # load and preprocess image
         image = np.array(Image.open(image_path))
         height, width = image.shape[:2]
@@ -126,6 +126,8 @@ def evaluate(model_path, images_dir, class_names, output_dir):
 
 
 if __name__ == '__main__':
+    coco = COCO('datasets/annotations/instances_val2017.json')
+    print(coco.image_dict['000000397133'])
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
 
