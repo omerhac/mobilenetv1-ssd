@@ -8,6 +8,10 @@ import cv2
 import warnings
 from torch.serialization import SourceChangeWarning
 from coco import COCO
+from tqdm import tqdm
+from pycocotools import coco
+from pycocotools.cocoeval import COCOeval
+
 
 # disable source change warning
 warnings.filterwarnings("ignore", category=SourceChangeWarning)
@@ -112,13 +116,14 @@ def postprocess_example(prediction, image_name, dataset_meta):
 
 
 @torch.no_grad()
-def evaluate(model_path, images_dir, dataset_meta, output_dir=None):
+def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=False):
     """Evaluate model on images.
     Args:
         model_path: path to serialized model
         images_dir: path to images directory
         dataset_meta: dataset object describing its metadata
-        output_dir: OPTIONAL, where to save detection results
+        output_dir: OPTIONAL, where to save detection results (required for saving images also)
+        save_images: flag, whether to save images with bboxes
     """
 
     device = torch.device('cpu')
@@ -130,21 +135,28 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None):
     # prepare model for inference
     model.eval()
     image_paths = glob.glob(images_dir + '/*.jpg')
+    results = []
 
     # predict
-    for i, image_path in enumerate(image_paths):
-        # load and preprocess image
+    for i, image_path in tqdm(enumerate(image_paths), total=len(image_paths)):
+        # load image
         image = np.array(Image.open(image_path))
+        image_name = os.path.basename(image_path)
+        # preprocess
         image_tensor = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)
         image_tensor = image_tensor.unsqueeze(0)  # add batch dim
-        image_name = os.path.basename(image_path)
 
         # predict
         result = model(image_tensor)
-        detection_results = postprocess_example(result, image_name, dataset_meta)
 
-        # save detection results if output_dir is provided
-        if output_dir:
+        # postprocess
+        detection_results = postprocess_example(result, image_name, dataset_meta)
+        results += detection_results  # aggregate final results
+
+        # save detection results if save_images is True and output_dir is provided
+        if save_images:
+            assert output_dir, 'output_dir should be provided for saving images with bboxes'
+
             boxes, labels, scores = [], [], []
             for detection in detection_results:
                 boxes.append(detection['bbox'])
@@ -159,10 +171,16 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None):
             except:
                 print(f'Cant draw {image_name} boxes because its grayscale')
 
+    results = np.stack(detection_results)
+
+    # save if needed
+    if output_dir:
+        np.save(f'{output_dir}/detection_results', results)
+
 
 if __name__ == '__main__':
     coco_meta = COCO('datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
 
-    evaluate(model_path, images_dir, coco_meta, 'output')
+    evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=False)
