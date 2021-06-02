@@ -16,13 +16,14 @@ COCO_NUM_CLASSES = 91
 
 
 def pre_process_coco_mobilenet(img, dims=None, need_transpose=False):
+    """Preprocess image for model digestion. zero mean and scale to [-1, 1]"""
     img = maybe_resize(img, dims)
     img -= 127.5
     img /= 127.5
     # transpose if needed
     if need_transpose:
         img = img.transpose([2, 0, 1])
-    return img
+    return torch.tensor(img, dtype=torch.float32)
 
 
 def maybe_resize(img, dims):
@@ -65,7 +66,15 @@ def transform_coco_box_for_drawing(box):
 
 
 def postprocess_example(prediction, image_name, dataset_meta):
-    """Postprocess and SSD prediction. """
+    """Postprocess and SSD prediction.
+    Args:
+        prediction: output tensor from model prediction on a single image. shape [bboxes, labels, scores]
+        image_name: image name in dataset directory. i.e. 'xxxx.jpg'
+        dataset_meta: dataset object describing its metadata
+    Returns:
+        detection_results: [detection_result1, detection_result2, ...] where
+                            detection result = {image_id, category_id, bbox, score} as requested in COCO
+    """
     # unpack
     boxes, labels, scores = prediction
     boxes = boxes[0]
@@ -103,8 +112,14 @@ def postprocess_example(prediction, image_name, dataset_meta):
 
 
 @torch.no_grad()
-def evaluate(model_path, images_dir, dataset_meta, output_dir):
-    """Evaluate model on images"""
+def evaluate(model_path, images_dir, dataset_meta, output_dir=None):
+    """Evaluate model on images.
+    Args:
+        model_path: path to serialized model
+        images_dir: path to images directory
+        dataset_meta: dataset object describing its metadata
+        output_dir: OPTIONAL, where to save detection results
+    """
 
     device = torch.device('cpu')
     # build mobilenetv1 ssd and cast to cpu
@@ -120,8 +135,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir):
     for i, image_path in enumerate(image_paths):
         # load and preprocess image
         image = np.array(Image.open(image_path))
-        image_proc = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)
-        image_tensor = torch.tensor(image_proc, dtype=torch.float32)
+        image_tensor = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)
         image_tensor = image_tensor.unsqueeze(0)  # add batch dim
         image_name = os.path.basename(image_path)
 
@@ -129,20 +143,21 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir):
         result = model(image_tensor)
         detection_results = postprocess_example(result, image_name, dataset_meta)
 
-        # just for debugging #
-        boxes, labels, scores = [], [], []
-        for detection in detection_results:
-            boxes.append(detection['bbox'])
-            labels.append(detection['category_id'])
-            scores.append(detection['score'])
-        boxes = [transform_coco_box_for_drawing(box) for box in boxes]
+        # save detection results if output_dir is provided
+        if output_dir:
+            boxes, labels, scores = [], [], []
+            for detection in detection_results:
+                boxes.append(detection['bbox'])
+                labels.append(detection['category_id'])
+                scores.append(detection['score'])
+            boxes = [transform_coco_box_for_drawing(box) for box in boxes]
 
-        # draw and save boxes
-        try:
-            drawn_image = draw_boxes(image, boxes, labels, scores, dataset_meta.class_names)
-            Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
-        except:
-            print(f'Cant draw {image_name} boxes because its grayscale')
+            # draw and save boxes
+            try:
+                drawn_image = draw_boxes(image, boxes, labels, scores, dataset_meta.class_names)
+                Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
+            except:
+                print(f'Cant draw {image_name} boxes because its grayscale')
 
 
 if __name__ == '__main__':
