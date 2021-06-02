@@ -74,13 +74,13 @@ def postprocess_example(prediction, width, height):
 
     # process boxes (comes from model as xmax, ymax, xmin, ymin)
     def process_box(box):
-        x_min = box[0] * width
-        y_min = box[1] * height
-        x_max = box[2] * width
-        y_max = box[3] * height
+        x_min = round(float(box[0] * width), ndigits=1)  # round to nearest tenth of a pixel to reduce result file size
+        y_min = round(float(box[1] * height), ndigits=1)
+        x_max = round(float(box[2] * width), ndigits=1)
+        y_max = round(float(box[3] * height), ndigits=1)
         w = x_max - x_min
         h = y_max - y_min
-        return np.array([x_min, y_min, w, h])
+        return [x_min, y_min, w, h]
 
     boxes = [process_box(box) for box in boxes]
 
@@ -94,7 +94,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir):
     device = torch.device('cpu')
     # build mobilenetv1 ssd and cast to cpu
     # load model weights
-    model = torch.load(model_path, map_location=lambda storage, loc: storage)
+    model = torch.load(model_path, map_location=device)
     model = model.to(device)
 
     # prepare model for inference
