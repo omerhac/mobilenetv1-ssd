@@ -88,7 +88,7 @@ def postprocess_example(prediction, width, height):
 
 
 @torch.no_grad()
-def evaluate(model_path, images_dir, class_names, output_dir):
+def evaluate(model_path, images_dir, dataset_meta, output_dir):
     """Evaluate model on images"""
 
     device = torch.device('cpu')
@@ -105,11 +105,11 @@ def evaluate(model_path, images_dir, class_names, output_dir):
     for i, image_path in enumerate(image_paths):
         # load and preprocess image
         image = np.array(Image.open(image_path))
-        height, width = image.shape[:2]
         image_proc = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)
         image_tensor = torch.tensor(image_proc, dtype=torch.float32)
         image_tensor = image_tensor.unsqueeze(0)  # add batch dim
         image_name = os.path.basename(image_path)
+        width, height = dataset_meta.image_dict[image_name]['width'], dataset_meta.image_dict[image_name]['height']
 
         # predict
         result = model(image_tensor)
@@ -119,21 +119,15 @@ def evaluate(model_path, images_dir, class_names, output_dir):
 
         # draw and save boxes
         try:
-            drawn_image = draw_boxes(image, boxes, labels, scores, class_names)
+            drawn_image = draw_boxes(image, boxes, labels, scores, dataset_meta.class_names)
             Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
         except:
             print(f'Cant draw {image_name} boxes because its grayscale')
 
 
 if __name__ == '__main__':
-    coco = COCO('datasets/annotations/instances_val2017.json')
-    print(coco.image_dict['000000397133'])
+    coco_meta = COCO('datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
 
-    with open('coco_labels.txt') as file:
-        coco_labels = file.read().splitlines()
-
-    class_names = {key+1: coco_labels[key] for key in range(len(coco_labels))}
-    print(class_names)
-    evaluate(model_path, images_dir, class_names, 'output')
+    evaluate(model_path, images_dir, coco_meta, 'output')
