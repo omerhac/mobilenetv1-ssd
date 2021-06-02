@@ -128,8 +128,6 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
         save_images: flag, whether to save images with bboxes
     """
 
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
     start_time = time.time()
 
     device = torch.device('cpu')
@@ -209,6 +207,10 @@ if __name__ == '__main__':
     coco_meta = COCO('datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
     images_dir = 'datasets/val2017'
+
+    # create output dir
+    if not os.path.exists('output'):
+        os.mkdir('output')
 
     evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=False)
 
