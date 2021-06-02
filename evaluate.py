@@ -128,7 +128,10 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
         save_images: flag, whether to save images with bboxes
     """
 
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
     start_time = time.time()
+
     device = torch.device('cpu')
     # build mobilenetv1 ssd and cast to cpu
     # load model weights
