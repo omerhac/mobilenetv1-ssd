@@ -64,13 +64,17 @@ def transform_coco_box_for_drawing(box):
     return x_min, y_min, x_max, y_max
 
 
-def postprocess_example(prediction, width, height):
+def postprocess_example(prediction, image_name, dataset_meta):
     """Postprocess and SSD prediction. """
     # unpack
     boxes, labels, scores = prediction
     boxes = boxes[0]
     labels = labels[0]
     scores = scores[0]
+
+    # extract metadata
+    width, height = dataset_meta.image_dict[image_name]['width'], dataset_meta.image_dict[image_name]['height']
+    image_id = dataset_meta.image_dict[image_name]['id']
 
     # process boxes (comes from model as xmax, ymax, xmin, ymin)
     def process_box(box):
@@ -84,7 +88,18 @@ def postprocess_example(prediction, width, height):
 
     boxes = [process_box(box) for box in boxes]
 
-    return boxes, labels, scores
+    # append labels and scores
+    detection_results = []
+
+    for idx, box in enumerate(boxes):
+        detection_results.append({
+            'image_id': image_id,
+            'category_id': int(labels[idx]),
+            'bbox': boxes[idx],
+            'score': float(scores[idx])
+        })
+
+    return detection_results
 
 
 @torch.no_grad()
@@ -109,13 +124,18 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir):
         image_tensor = torch.tensor(image_proc, dtype=torch.float32)
         image_tensor = image_tensor.unsqueeze(0)  # add batch dim
         image_name = os.path.basename(image_path)
-        width, height = dataset_meta.image_dict[image_name]['width'], dataset_meta.image_dict[image_name]['height']
 
         # predict
         result = model(image_tensor)
-        boxes, labels, scores = postprocess_example(result, width, height)
+        detection_results = postprocess_example(result, image_name, dataset_meta)
+
+        # just for debugging #
+        boxes, labels, scores = [], [], []
+        for detection in detection_results:
+            boxes.append(detection['bbox'])
+            labels.append(detection['category_id'])
+            scores.append(detection['score'])
         boxes = [transform_coco_box_for_drawing(box) for box in boxes]
-        labels = [int(label.numpy()) for label in labels]
 
         # draw and save boxes
         try:
