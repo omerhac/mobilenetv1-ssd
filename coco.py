@@ -1,18 +1,27 @@
 import json
+import torch
+from torch.utils.data import Dataset
+import os
+from torchvision.io import read_image
 
 
-class COCO:
+class COCO(Dataset):
     """Class for storing COCO dataset image metadata"""
-    def __init__(self, annotation_filepath, labels_filepath, image_size=[300,300]):
+    def __init__(self, images_dir, annotation_filepath, labels_filepath, image_size=[300,300]):
         """Initialize COCO metadata instance
         Args:
             annotation_filepath: path to annotation file
             labels_filepath: path to labels list textfile
             image_size: model input image size
+            images_dir: path to image directory
         """
+        super(COCO, self).__init__()
+
         self.image_size = image_size
-        self.image_dict = {}
+        self.meta_dict_by_filename = {}
         self.annotaion_filepath = annotation_filepath
+        self.images_dir = images_dir
+        self.file_names = []
 
         # get labels
         with open(labels_filepath) as file:
@@ -28,8 +37,25 @@ class COCO:
 
         # collect metadata
         for image_data in metadata:
-            self.image_dict[image_data['file_name']] = {
+            self.meta_dict_by_filename[image_data['file_name']] = {
                 'id': image_data['id'],
                 'width': image_data['width'],
                 'height': image_data['height']
             }
+            self.file_names.append(image_data['file_name'])
+
+    def __getitem__(self, item):
+        img_path = os.path.join(self.images_dir, self.file_names[item])
+        #image = read_image(img_path)
+        return img_path
+
+    def __len__(self):
+        return len(self.file_names)
+
+
+if __name__ == '__main__':
+    data = COCO('datasets/val2017', 'datasets/annotations/instances_val2017.json', 'coco_labels.txt')
+    data_loader = torch.utils.data.DataLoader(data, batch_size=64)
+    d = next(iter(data_loader))
+    print(d)
+
