@@ -54,10 +54,21 @@ def transform_coco_box_for_drawing(box):
     return x_min, y_min, x_max, y_max
 
 
-def postprocess_example(prediction, image_name, dataset_meta):
-    """Postprocess and SSD prediction.
+def evaluate_results(detection_results, annotation_filepath):
+    """Evaluate metrics of detection results"""
+    coco_GT = coco.COCO(annotation_file=annotation_filepath)
+    coco_DT = coco_GT.loadRes(detection_results)
+    coco_eval = COCOeval(cocoGt=coco_GT, cocoDt=coco_DT, iouType='bbox')
+    coco_eval.evaluate()
+    coco_eval.accumulate()
+    coco_eval.summarize()
+
+
+def postprocess_example_coco(prediction_processed, image_name, dataset_meta):
+    """Final postprocess for a single example. This is purely for generating the COCO result format.
     Args:
-        prediction: output tensor from model prediction on a single image. shape [bboxes, labels, scores]
+        prediction_processed: output tensor from model prediction on a single image after generating the bbox relative
+                              coordinates and NMS. shape [num_bboxes, num_labels, num_scores]
         image_name: image name in dataset directory. i.e. 'xxxx.jpg'
         dataset_meta: dataset object describing its metadata
     Returns:
@@ -65,7 +76,7 @@ def postprocess_example(prediction, image_name, dataset_meta):
                             detection result = {image_id, category_id, bbox, score} as requested in COCO
     """
     # unpack
-    boxes, labels, scores = prediction
+    boxes, labels, scores = prediction_processed
     boxes = boxes[0]
     labels = labels[0]
     scores = scores[0]
@@ -100,6 +111,12 @@ def postprocess_example(prediction, image_name, dataset_meta):
     return detection_results
 
 
+def postprocess_batch(model_predictions, model):
+    """All the postprocessing needed after generating raw model predictions"""
+    batch_processed = model.model_post_process(model_predictions)
+
+
+
 @torch.no_grad()
 def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=False):
     """Main benchmark method.
@@ -113,7 +130,6 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
 
     start_time = time.time()
 
-    device = torch.device('cpu')
     # build mobilenetv1-ssd
     model = create_mobilenetv1_ssd(len(dataset_meta.class_names))
 
@@ -137,8 +153,9 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
         # predict
         result = model(image_tensor)
         result = model.model_post_process(result)
+
         # postprocess
-        detection_results = postprocess_example(result, image_name, dataset_meta)
+        detection_results = postprocess_example_coco(result, image_name, dataset_meta)
         results += detection_results  # aggregate final results
 
         # save image with bboxes if save_images is True and output_dir is provided
@@ -175,16 +192,6 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
         # evaluate metrics
         evaluate_results('.detection_results_temp.json', dataset_meta.annotaion_filepath)
         os.remove('.detection_results_temp.json')
-
-
-def evaluate_results(detection_results, annotation_filepath):
-    """Evaluate metrics of detection results"""
-    coco_GT = coco.COCO(annotation_file=annotation_filepath)
-    coco_DT = coco_GT.loadRes(detection_results)
-    coco_eval = COCOeval(cocoGt=coco_GT, cocoDt=coco_DT, iouType='bbox')
-    coco_eval.evaluate()
-    coco_eval.accumulate()
-    coco_eval.summarize()
 
 
 if __name__ == '__main__':
