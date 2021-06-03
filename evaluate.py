@@ -45,24 +45,6 @@ def maybe_resize(img, dims):
     return img
 
 
-def preprocess_dataset(dataset_dir, save_dir=None):
-    """Preprocess all the images in the dataset and save them as arrays to save_dir. Reshape to (300,300),
-    Zero mean,  scale and transpose to CHW"""
-
-    image_paths = glob.glob(dataset_dir + '/*.jpg')
-
-    if not save_dir:
-        save_dir = dataset_dir + '/preprocessed'
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
-
-    for image_path in image_paths:
-        image_name = os.path.basename(image_path).split('.')[0]
-        image = np.array(Image.open(image_path))
-        image = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)  # mobilenet specs
-        np.save(os.path.join(save_dir, image_name), image)  # save
-
-
 def transform_coco_box_for_drawing(box):
     """Transform [xmin, ymin, w,h] tensor to [xmin, ymin, xmax, ymax] tuple"""
     x_min = int(box[0])
@@ -154,7 +136,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
 
         # predict
         result = model(image_tensor)
-
+        result = model.model_post_process(result)
         # postprocess
         detection_results = postprocess_example(result, image_name, dataset_meta)
         results += detection_results  # aggregate final results

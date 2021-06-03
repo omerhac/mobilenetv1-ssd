@@ -148,7 +148,13 @@ class SSD(nn.Module):
         self.priors = torch.cat(priors, dim=0)
         self._feature_map_shapes = shapes
 
-    def ssd_model(self, x):
+    def forward(self, x):
+        """Model forward pass. Backbone though Prediction heads.
+        Args:
+            images = torch.Tensor[N,C,H,W]
+        Returns:
+            results: [prediction_head1_pred, prediction_head2_pred, ...., prediction_headn_pred]
+        """
         feature_maps = self.backbone(x)
 
         out = feature_maps[-1]
@@ -160,17 +166,17 @@ class SSD(nn.Module):
         for feature, module in zip(feature_maps, self.predictors):
             results.append(module(feature))
 
-        return self.generate_boxes_and_scores(results)
+        return results
 
     def generate_boxes_and_scores(self, model_predictions):
         """Generate bounding boxes and per class score for each model prediction
         Args:
-            model_predictions = a list of model predictions for each of
-                                the models default boxes. i.e. len(model_predictions) = num_default_boxes.
+            model_predictions = a list of module predictions (DNN outputs) for each of
+                                the models prediction heads. i.e. len(model_predictions) = num_prediction_heads.
                                 each model_prediction = [class_logits, bbox_reg]
             Returns:
-                scores: tensor of shape [num_default_boxes, num_classes]
-                boxes: tensor of shape [num_default_boxes, 4]
+                scores: tensor of shape [1, num_default_boxes, num_classes]
+                boxes: tensor of shape [1, num_default_boxes, 4]
         """
 
         class_logits, box_regression = list(zip(*model_predictions))
@@ -187,21 +193,24 @@ class SSD(nn.Module):
         # add a batch dimension
         return scores, boxes
 
-
-    def forward(self, images):
+    def model_post_process(self, model_predictions):
         """
-        Arguments:
-            images (torch.Tensor[N,C,H,W]):
+        Args:
+            model_predictions = a list of module predictions (DNN outputs) for each of
+                                the models prediction heads. i.e. len(model_predictions) = num_prediction_heads.
+                                each model_prediction = [class_logits, bbox_reg]
+        Return:
+            [list_boxes, list_labels, list_scores] = boxes labels and scores after NMS
         """
 
-        scores, boxes = self.ssd_model(images)
+        scores, boxes = self.generate_boxes_and_scores(model_predictions)
         list_boxes=[]; list_labels=[]; list_scores=[]
         for b in range(len(scores)):
             bboxes, blabels, bscores = self.filter_results(scores[b], boxes[b])
             list_boxes.append(bboxes)
             list_labels.append(blabels.long())
             list_scores.append(bscores)
-        #boxes = self.rescale_boxes(boxes, height, width)
+
         return [list_boxes, list_labels, list_scores]
 
     def filter_results(self, scores, boxes):
@@ -210,8 +219,7 @@ class SSD(nn.Module):
         # on python. This implementation is faster on the
         # CPU, which is why we run this part on the CPU
         cpu_device = torch.device("cpu")
-        #boxes = boxes[0]
-        #scores = scores[0]
+
         boxes = boxes.to(cpu_device)
         scores = scores.to(cpu_device)
         selected_box_probs = []
