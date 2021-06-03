@@ -12,9 +12,6 @@ class COCO:
         """
         self.image_size = image_size
         self.image_dict = {}
-        self.label_list = []
-        self.image_ids = []
-        self.image_sizes = []
         self.annotaion_filepath = annotation_filepath
 
         # get labels

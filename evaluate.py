@@ -13,6 +13,7 @@ from tqdm import tqdm
 from pycocotools import coco
 from pycocotools.cocoeval import COCOeval
 import time
+from models.ssd_mobilenet_v1 import create_mobilenetv1_ssd
 
 
 # disable source change warning
@@ -131,10 +132,11 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
     start_time = time.time()
 
     device = torch.device('cpu')
-    # build mobilenetv1 ssd and cast to cpu
-    # load model weights
-    model = torch.load(model_path, map_location=device)
-    model = model.to(device)
+    # build mobilenetv1-ssd
+    model = create_mobilenetv1_ssd(len(dataset_meta.class_names))
+
+    # load pretrained model weights
+    model.load_state_dict(torch.load(model_path))
 
     # prepare model for inference
     model.eval()
@@ -205,12 +207,12 @@ def evaluate_results(detection_results, annotation_filepath):
 
 if __name__ == '__main__':
     coco_meta = COCO('datasets/annotations/instances_val2017.json', 'coco_labels.txt')
-    model_path = 'trained_models/ssd_mobilenet_v1.pytorch'
+    model_path = 'trained_models/mobilenetv1-ssd.pt'
     images_dir = 'datasets/val2017'
 
     # create output dir
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=False)
+    evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=True)
 

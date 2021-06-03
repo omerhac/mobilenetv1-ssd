@@ -133,6 +133,21 @@ class SSD(nn.Module):
         # set it to 0.01 for better results but slower runtime
         self.score_threshold = 0.3
 
+        # generate anchors (needed only once because input image size is constant
+        # run once through the network
+        fake_image = torch.randn(1, 3, self.image_size, self.image_size)
+        feature_maps = self.backbone(fake_image)
+        out = feature_maps[-1]
+        for module in self.extras:
+            out = module(out)
+            feature_maps.append(out)
+        shapes = [o.shape[-2:] for o in feature_maps]  # get feature maps shape
+
+        # generate anchors for the sizes of the feature map
+        priors = create_ssd_anchors()._generate(shapes)
+        self.priors = torch.cat(priors, dim=0)
+        self._feature_map_shapes = shapes
+
     def ssd_model(self, x):
         feature_maps = self.backbone(x)
 
@@ -145,23 +160,28 @@ class SSD(nn.Module):
         for feature, module in zip(feature_maps, self.predictors):
             results.append(module(feature))
 
-        class_logits, box_regression = list(zip(*results))
+        return self.generate_boxes_and_scores(results)
+
+    def generate_boxes_and_scores(self, model_predictions):
+        """Generate bounding boxes and per class score for each model prediction
+        Args:
+            model_predictions = a list of model predictions for each of
+                                the models default boxes. i.e. len(model_predictions) = num_default_boxes.
+                                each model_prediction = [class_logits, bbox_reg]
+            Returns:
+                scores: tensor of shape [num_default_boxes, num_classes]
+                boxes: tensor of shape [num_default_boxes, 4]
+        """
+
+        class_logits, box_regression = list(zip(*model_predictions))
         class_logits = torch.cat(class_logits, 1)
         box_regression = torch.cat(box_regression, 1)
 
         scores = torch.sigmoid(class_logits)
         box_regression = box_regression.squeeze(0)
 
-        shapes = [o.shape[-2:] for o in feature_maps]
-        if shapes != self._feature_map_shapes:
-            # generate anchors for the sizes of the feature map
-            priors = create_ssd_anchors()._generate(shapes)
-            priors = torch.cat(priors, dim=0)
-            self.priors = priors.to(scores)
-            self._feature_map_shapes = shapes
-
         self.coder_weights = self.coder_weights.to(scores)
-        if box_regression.dim()==2:
+        if box_regression.dim() == 2:
             box_regression = box_regression[None]
         boxes = decode_boxes(box_regression, self.priors, self.coder_weights)
         # add a batch dimension
