@@ -195,6 +195,7 @@ class SSD(nn.Module):
 
     def model_post_process(self, model_predictions):
         """
+        Generate actual object bounding boxes from raw model predictions."
         Args:
             model_predictions = a list of module predictions (DNN outputs) for each of
                                 the models prediction heads. i.e. len(model_predictions) = num_prediction_heads.
