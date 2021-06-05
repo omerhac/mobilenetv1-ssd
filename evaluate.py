@@ -82,8 +82,8 @@ def postprocess_example_coco(prediction_processed, image_name, dataset_meta):
     scores = scores[0]
 
     # extract metadata
-    width, height = dataset_meta.image_dict[image_name]['width'], dataset_meta.image_dict[image_name]['height']
-    image_id = dataset_meta.image_dict[image_name]['id']
+    width, height = dataset_meta.meta_dict_by_filename[image_name]['width'], dataset_meta.meta_dict_by_filename[image_name]['height']
+    image_id = dataset_meta.meta_dict_by_filename[image_name]['id']
 
     # process boxes (comes from model as xmax, ymax, xmin, ymin)
     def process_box(box):
@@ -116,14 +116,13 @@ def postprocess_batch(model_predictions, model):
     batch_processed = model.model_post_process(model_predictions)
 
 
-
 @torch.no_grad()
-def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=False):
+def evaluate(model_path, dataset, batch_size=1, output_dir=None, save_images=False):
     """Main benchmark method.
     Args:
         model_path: path to serialized model
-        images_dir: path to images directory
-        dataset_meta: dataset object describing its metadata
+        dataset: dataset pytorch object
+        batch_size: batch size
         output_dir: OPTIONAL, where to save detection results (required for saving images also)
         save_images: flag, whether to save images with bboxes
     """
@@ -131,31 +130,28 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
     start_time = time.time()
 
     # build mobilenetv1-ssd
-    model = create_mobilenetv1_ssd(len(dataset_meta.class_names))
+    model = create_mobilenetv1_ssd(len(dataset.class_names))
 
     # load pretrained model weights
     model.load_state_dict(torch.load(model_path))
 
+    # prepare dataloader
+    loader = iter(torch.utils.data.DataLoader(dataset, batch_size=batch_size))
     # prepare model for inference
     model.eval()
-    image_paths = glob.glob(images_dir + '/*.jpg')
     results = []
 
     # predict
-    for i, image_path in tqdm(enumerate(image_paths), total=len(image_paths)):
-        # load image
-        image = np.array(Image.open(image_path))
-        image_name = os.path.basename(image_path)
-        # preprocess
-        image_tensor = pre_process_coco_mobilenet(image, dims=[300, 300, 3], need_transpose=True)
-        image_tensor = image_tensor.unsqueeze(0)  # add batch dim
-
+    for batch_idx in tqdm(range(len(loader))):
+        # load and preprocess batch of images
+        batch_images, batch_filenames = next(loader)
+        batch_filenames = batch_filenames[0]
         # predict
-        result = model(image_tensor)
+        result = model(batch_images)
         result = model.model_post_process(result)
 
         # postprocess
-        detection_results = postprocess_example_coco(result, image_name, dataset_meta)
+        detection_results = postprocess_example_coco(result, batch_filenames, dataset)
         results += detection_results  # aggregate final results
 
         # save image with bboxes if save_images is True and output_dir is provided
@@ -171,10 +167,10 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
 
             # draw and save boxes
             try:
-                drawn_image = draw_boxes(image, boxes, labels, scores, dataset_meta.class_names)
+                drawn_image = draw_boxes(batch_images[0], boxes, labels, scores, dataset_meta.class_names)
                 Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
             except:
-                print(f'Cant draw {image_name} boxes because its grayscale')
+                print(f'Cant draw {batch_filenames} boxes because its grayscale')
 
     print(f'Finished inference in {time.time() - start_time} seconds.')
 
@@ -195,7 +191,7 @@ def evaluate(model_path, images_dir, dataset_meta, output_dir=None, save_images=
 
 
 if __name__ == '__main__':
-    coco_meta = COCO('datasets/annotations/instances_val2017.json', 'coco_labels.txt')
+    coco_meta = COCO('datasets/val2017', 'datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     model_path = 'trained_models/mobilenetv1-ssd.pt'
     images_dir = 'datasets/val2017'
 
@@ -203,5 +199,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, images_dir, coco_meta, output_dir='output', save_images=True)
+    evaluate(model_path, coco_meta, output_dir='output', save_images=True)
 

@@ -22,7 +22,7 @@ class COCO(Dataset):
         self.meta_dict_by_filename = {}
         self.annotaion_filepath = annotation_filepath
         self.images_dir = images_dir
-        self.file_names = []
+        self._file_names = []
 
         # get labels
         with open(labels_filepath) as file:
@@ -43,20 +43,20 @@ class COCO(Dataset):
                 'width': image_data['width'],
                 'height': image_data['height']
             }
-            self.file_names.append(image_data['file_name'])
+            self._file_names.append(image_data['file_name'])
 
     def __getitem__(self, item):
-        img_path = os.path.join(self.images_dir, self.file_names[item])
+        img_path = os.path.join(self.images_dir, self._file_names[item])
         image = read_image(img_path)
         image = image.type(torch.FloatTensor)  # convert to float32
 
         # normalize to zero mean
         image -= 127.5
         image /= 127.5
-        return torchvision.transforms.Resize(size=self.image_size)(image)
+        return torchvision.transforms.Resize(size=self.image_size)(image), self._file_names[item]
 
     def __len__(self):
-        return len(self.file_names)
+        return len(self._file_names)
 
 
 if __name__ == '__main__':
