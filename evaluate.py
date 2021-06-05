@@ -1,12 +1,10 @@
 import torch
 import json
-import glob
 from collections import defaultdict
 from PIL import Image
 from vizer.draw import draw_boxes
 import numpy as np
 import os
-import cv2
 import warnings
 from torch.serialization import SourceChangeWarning
 from coco import COCO
@@ -19,31 +17,6 @@ from models.ssd_mobilenet_v1 import create_mobilenetv1_ssd
 
 # disable source change warning
 warnings.filterwarnings("ignore", category=SourceChangeWarning)
-
-COCO_NUM_CLASSES = 91
-
-
-def pre_process_coco_mobilenet(img, dims=None, need_transpose=False):
-    """Preprocess image for model digestion. zero mean and scale to [-1, 1]"""
-    img = maybe_resize(img, dims)
-    img -= 127.5
-    img /= 127.5
-    # transpose if needed
-    if need_transpose:
-        img = img.transpose([2, 0, 1])
-    return torch.tensor(img, dtype=torch.float32)
-
-
-def maybe_resize(img, dims):
-    img = np.array(img, dtype=np.float32)
-    if len(img.shape) < 3 or img.shape[2] != 3:
-        # some images might be grayscale
-        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    if dims != None:
-        im_height, im_width, _ = dims
-        img = cv2.resize(img, (im_width, im_height), interpolation=cv2.INTER_LINEAR)
-    return img
 
 
 def transform_coco_box_for_drawing(box):
@@ -65,7 +38,7 @@ def evaluate_results(detection_results, annotation_filepath):
     coco_eval.summarize()
 
 
-def postprocess_example_coco(image_name, image_boxes, image_labels, image_scores, dataset_meta):
+def postprocess_image_coco(image_name, image_boxes, image_labels, image_scores, dataset_meta):
     """Final postprocess for a single example. This is purely for generating the COCO result format.
     Args:
         image_name: image name in dataset directory. i.e. 'xxxx.jpg'
@@ -110,20 +83,28 @@ def postprocess_example_coco(image_name, image_boxes, image_labels, image_scores
 
 
 def postprocess_batch(model_predictions, batch_filenames, model, dataset):
-    """All the postprocessing needed after generating raw model predictions"""
+    """All the postprocessing needed after generating raw model predictions.
+    Args:
+        model_predictions: raw model predictions
+        batch_filenames: filenames of the images fed to the model
+        model: the model
+        dataset: dataset object
+    Returns:
+        batch_coco_results: COCO formatted results -> {image_id, category_id, bbox, score}
+    """
 
     # perform NMS and get relative bbox coordinates from model predictions
     batch_processed = model.model_post_process(model_predictions)
     batch_boxes, batch_labels, batch_scores = batch_processed
 
     # produce coco results format for each bounding box for each image
-    # it acts linearly on every image because image shape varies
+    # it acts linearly on every image because of generated COCO format and because image shape varies
     batch_coco_results = []
     for image_filename, image_boxes, image_labels, image_scores in zip(batch_filenames,
                                                                        batch_boxes, batch_labels, batch_scores):
         # produce coco result for that image and aggregate
-        image_coco_results = postprocess_example_coco(image_filename,
-                                                      image_boxes, image_labels, image_scores, dataset)
+        image_coco_results = postprocess_image_coco(image_filename,
+                                                    image_boxes, image_labels, image_scores, dataset)
         batch_coco_results += image_coco_results
 
     return batch_coco_results
@@ -153,10 +134,12 @@ def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=Fa
     # prepare model for inference
     model.eval()
     coco_results = []
+    print(f'Finished loading model in {time.time() - start_time} seconds.')
+    start_time = time.time()
 
     # predict
     for batch_idx in tqdm(range(len(loader))):
-        # load and preprocess batch of images (reshape, normalize and zero mean)
+        # Data Loader loads and preprocesses batch of images (reshape, normalize and zero mean)
         batch_images, batch_filenames = next(loader)
 
         # get DNN prediction
@@ -167,34 +150,10 @@ def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=Fa
         batch_coco_results = postprocess_batch(results, batch_filenames, model, dataset)
         coco_results += batch_coco_results  # aggregate final results
 
-        # save image with bboxes if save_images is True and output_dir is provided
+        # save images with bboxes if save_images is True and output_dir is provided
         if save_images:
             assert output_dir, 'output_dir should be provided for saving images with bboxes'
-
-            # dict for grouping coco detection results per image
-            batch_detection_dict = defaultdict(lambda: {
-                'boxes': [],
-                'labels': [],
-                'scores': []
-            })
-            for detection in batch_coco_results:
-                # transform boxes to drawing format
-                boxes = transform_coco_box_for_drawing(detection['bbox'])
-                batch_detection_dict[detection['image_id']]['boxes'].append(boxes)
-                batch_detection_dict[detection['image_id']]['labels'].append(detection['category_id'])
-                batch_detection_dict[detection['image_id']]['scores'].append(detection['score'])
-
-            for image_id in batch_detection_dict.keys():
-                try:
-                    image_filename = dataset.image_id_to_filename[image_id]
-                    image_boxes  =batch_detection_dict[image_id]['boxes']
-                    image_labels = batch_detection_dict[image_id]['labels']
-                    image_scores = batch_detection_dict[image_id]['scores']
-                    image = np.array(Image.open(os.path.join(images_dir, image_filename)).convert("RGB"))
-                    drawn_image = draw_boxes(image, image_boxes, image_labels, image_scores, dataset.class_names)
-                    Image.fromarray(drawn_image).save(os.path.join(output_dir, image_filename))
-                except:
-                    print(f'Cant draw {44} boxes because its grayscale')
+            draw_bboxed_images(batch_coco_results, images_dir, dataset, output_dir)
 
     print(f'Finished inference in {time.time() - start_time} seconds.')
 
@@ -210,8 +169,38 @@ def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=Fa
             json.dump(coco_results, file)
 
         # evaluate metrics
-        evaluate_results('.detection_results_temp.json', dataset_meta.annotaion_filepath)
+        evaluate_results('.detection_results_temp.json', dataset.annotaion_filepath)
         os.remove('.detection_results_temp.json')
+
+
+def draw_bboxed_images(batch_coco_results, images_dir, dataset, output_dir):
+    """Save images with bounding boxes as depicted in the COCO results"""
+    # dict for grouping coco detection results per image
+    batch_detection_dict = defaultdict(lambda: {
+        'boxes': [],
+        'labels': [],
+        'scores': []
+    })
+    for detection in batch_coco_results:
+        # transform boxes to drawing format
+        box = transform_coco_box_for_drawing(detection['bbox'])
+        # append bounding box data
+        batch_detection_dict[detection['image_id']]['boxes'].append(box)
+        batch_detection_dict[detection['image_id']]['labels'].append(detection['category_id'])
+        batch_detection_dict[detection['image_id']]['scores'].append(detection['score'])
+
+    for image_id in batch_detection_dict.keys():
+        image_filename = dataset.image_id_to_filename[image_id]
+        try:
+            image_boxes = batch_detection_dict[image_id]['boxes']
+            image_labels = batch_detection_dict[image_id]['labels']
+            image_scores = batch_detection_dict[image_id]['scores']
+            # draw all of the images bounding boxes
+            image = np.array(Image.open(os.path.join(images_dir, image_filename)).convert("RGB"))
+            drawn_image = draw_boxes(image, image_boxes, image_labels, image_scores, dataset.class_names)
+            Image.fromarray(drawn_image).save(os.path.join(output_dir, image_filename))
+        except:
+            print(f'Cant draw {image_filename} boxes because its grayscale')
 
 
 if __name__ == '__main__':
@@ -223,5 +212,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, coco_meta, output_dir='output', save_images=True)
+    evaluate(model_path, coco_meta, batch_size=32, output_dir='output', save_images=False)
 
