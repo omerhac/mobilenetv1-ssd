@@ -54,7 +54,7 @@ if __name__ == '__main__':
     annotations_url = 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
 
     # download model
-    download_model(model_url, 'trained_models', 'ssd_mobilenet_v1.pytorch')
+    download_model(model_url, 'trained_models', 'mobilenetv1-sst.pt')
     # download dataset
     download_dataset_images(datasets_url, 'datasets', 'val2017')
     download_dataset_annotations(annotations_url, 'datasets')
