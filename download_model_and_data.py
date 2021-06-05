@@ -49,7 +49,7 @@ def download_dataset_annotations(dataset_url, datasets_dir):
 
 
 if __name__ == '__main__':
-    model_url = 'https://zenodo.org/record/3239977/files/ssd_mobilenet_v1.pytorch'
+    model_url = 'https://omerhac-bucket.s3.us-east-2.amazonaws.com/mobilenetv1-ssd.pt'
     datasets_url = 'http://images.cocodataset.org/zips/val2017.zip'
     annotations_url = 'http://images.cocodataset.org/annotations/annotations_trainval2017.zip'
 
