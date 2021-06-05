@@ -3,11 +3,12 @@ import torch
 from torch.utils.data import Dataset
 import os
 from torchvision.io import read_image
+import torchvision
 
 
 class COCO(Dataset):
     """Class for storing COCO dataset image metadata"""
-    def __init__(self, images_dir, annotation_filepath, labels_filepath, image_size=[300,300]):
+    def __init__(self, images_dir, annotation_filepath, labels_filepath, image_size=[300, 300]):
         """Initialize COCO metadata instance
         Args:
             annotation_filepath: path to annotation file
@@ -46,8 +47,13 @@ class COCO(Dataset):
 
     def __getitem__(self, item):
         img_path = os.path.join(self.images_dir, self.file_names[item])
-        #image = read_image(img_path)
-        return img_path
+        image = read_image(img_path)
+        image = image.type(torch.FloatTensor)  # convert to float32
+
+        # normalize to zero mean
+        image -= 127.5
+        image /= 127.5
+        return torchvision.transforms.Resize(size=self.image_size)(image)
 
     def __len__(self):
         return len(self.file_names)
@@ -57,5 +63,5 @@ if __name__ == '__main__':
     data = COCO('datasets/val2017', 'datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     data_loader = torch.utils.data.DataLoader(data, batch_size=64)
     d = next(iter(data_loader))
-    print(d)
+    print(d.shape)
 
