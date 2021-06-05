@@ -1,6 +1,7 @@
 import torch
 import json
 import glob
+from collections import defaultdict
 from PIL import Image
 from vizer.draw import draw_boxes
 import numpy as np
@@ -129,7 +130,7 @@ def postprocess_batch(model_predictions, batch_filenames, model, dataset):
 
 
 @torch.no_grad()
-def evaluate(model_path, dataset, batch_size=16, output_dir=None, save_images=False):
+def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=False):
     """Main benchmark method.
     Args:
         model_path: path to serialized model
@@ -170,32 +171,43 @@ def evaluate(model_path, dataset, batch_size=16, output_dir=None, save_images=Fa
         if save_images:
             assert output_dir, 'output_dir should be provided for saving images with bboxes'
 
-            boxes, labels, scores = [], [], []
-            for detection in detection_results:
-                boxes.append(detection['bbox'])
-                labels.append(detection['category_id'])
-                scores.append(detection['score'])
-            boxes = [transform_coco_box_for_drawing(box) for box in boxes]
+            # dict for grouping coco detection results per image
+            batch_detection_dict = defaultdict(lambda: {
+                'boxes': [],
+                'labels': [],
+                'scores': []
+            })
+            for detection in batch_coco_results:
+                # transform boxes to drawing format
+                boxes = transform_coco_box_for_drawing(detection['bbox'])
+                batch_detection_dict[detection['image_id']]['boxes'].append(boxes)
+                batch_detection_dict[detection['image_id']]['labels'].append(detection['category_id'])
+                batch_detection_dict[detection['image_id']]['scores'].append(detection['score'])
 
-            # draw and save boxes
-            try:
-                drawn_image = draw_boxes(batch_images[0], boxes, labels, scores, dataset_meta.class_names)
-                Image.fromarray(drawn_image).save(os.path.join(output_dir, image_name))
-            except:
-                print(f'Cant draw {batch_filenames} boxes because its grayscale')
+            for image_id in batch_detection_dict.keys():
+                try:
+                    image_filename = dataset.image_id_to_filename[image_id]
+                    image_boxes  =batch_detection_dict[image_id]['boxes']
+                    image_labels = batch_detection_dict[image_id]['labels']
+                    image_scores = batch_detection_dict[image_id]['scores']
+                    image = np.array(Image.open(os.path.join(images_dir, image_filename)).convert("RGB"))
+                    drawn_image = draw_boxes(image, image_boxes, image_labels, image_scores, dataset.class_names)
+                    Image.fromarray(drawn_image).save(os.path.join(output_dir, image_filename))
+                except:
+                    print(f'Cant draw {44} boxes because its grayscale')
 
     print(f'Finished inference in {time.time() - start_time} seconds.')
 
     # save if needed
     if output_dir:
         with open(f'{output_dir}/detection_results.json', 'w') as file:
-            json.dump(results, file)
+            json.dump(coco_results, file)
 
         # evaluate metrics
-        evaluate_results(f'{output_dir}/detection_results.json', dataset_meta.annotaion_filepath)
+        evaluate_results(f'{output_dir}/detection_results.json', dataset.annotaion_filepath)
     else:
         with open('.detection_results_temp.json', 'w') as file:
-            json.dump(results, file)
+            json.dump(coco_results, file)
 
         # evaluate metrics
         evaluate_results('.detection_results_temp.json', dataset_meta.annotaion_filepath)
@@ -211,5 +223,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, coco_meta, output_dir='output', save_images=False)
+    evaluate(model_path, coco_meta, output_dir='output', save_images=True)
 
