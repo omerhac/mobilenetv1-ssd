@@ -64,7 +64,7 @@ def evaluate_results(detection_results, annotation_filepath):
     coco_eval.summarize()
 
 
-def postprocess_example_coco(prediction_processed, image_name, dataset_meta):
+def postprocess_example_coco(image_name, image_boxes, image_labels, image_scores, dataset_meta):
     """Final postprocess for a single example. This is purely for generating the COCO result format.
     Args:
         prediction_processed: output tensor from model prediction on a single image after generating the bbox relative
@@ -76,10 +76,6 @@ def postprocess_example_coco(prediction_processed, image_name, dataset_meta):
                             detection result = {image_id, category_id, bbox, score} as requested in COCO
     """
     # unpack
-    boxes, labels, scores = prediction_processed
-    boxes = boxes[0]
-    labels = labels[0]
-    scores = scores[0]
 
     # extract metadata
     width, height = dataset_meta.meta_dict_by_filename[image_name]['width'], dataset_meta.meta_dict_by_filename[image_name]['height']
@@ -95,7 +91,7 @@ def postprocess_example_coco(prediction_processed, image_name, dataset_meta):
         h = y_max - y_min
         return [x_min, y_min, w, h]
 
-    boxes = [process_box(box) for box in boxes]
+    boxes = [process_box(box) for box in image_boxes]
 
     # append labels and scores
     detection_results = []
@@ -103,21 +99,32 @@ def postprocess_example_coco(prediction_processed, image_name, dataset_meta):
     for idx, box in enumerate(boxes):
         detection_results.append({
             'image_id': image_id,
-            'category_id': int(labels[idx]),
+            'category_id': int(image_labels[idx]),
             'bbox': boxes[idx],
-            'score': float(scores[idx])
+            'score': float(image_scores[idx])
         })
 
     return detection_results
 
 
-def postprocess_batch(model_predictions, model):
+def postprocess_batch(model_predictions, batch_filenames, model, dataset):
     """All the postprocessing needed after generating raw model predictions"""
     batch_processed = model.model_post_process(model_predictions)
+    batch_boxes, batch_labels, batch_scores = batch_processed
+
+    batch_coco_results = []
+    for image_filename, image_boxes, image_labels, image_scores in zip(batch_filenames,
+                                                                       batch_boxes, batch_labels, batch_scores):
+
+        image_coco_results = postprocess_example_coco(image_filename,
+                                                      image_boxes, image_labels, image_scores, dataset)
+        batch_coco_results += image_coco_results
+
+    return batch_coco_results
 
 
 @torch.no_grad()
-def evaluate(model_path, dataset, batch_size=1, output_dir=None, save_images=False):
+def evaluate(model_path, dataset, batch_size=16, output_dir=None, save_images=False):
     """Main benchmark method.
     Args:
         model_path: path to serialized model
@@ -139,20 +146,19 @@ def evaluate(model_path, dataset, batch_size=1, output_dir=None, save_images=Fal
     loader = iter(torch.utils.data.DataLoader(dataset, batch_size=batch_size))
     # prepare model for inference
     model.eval()
-    results = []
+    coco_results = []
 
     # predict
     for batch_idx in tqdm(range(len(loader))):
         # load and preprocess batch of images
         batch_images, batch_filenames = next(loader)
-        batch_filenames = batch_filenames[0]
+
         # predict
-        result = model(batch_images)
-        result = model.model_post_process(result)
+        results = model(batch_images)
 
         # postprocess
-        detection_results = postprocess_example_coco(result, batch_filenames, dataset)
-        results += detection_results  # aggregate final results
+        batch_coco_results = postprocess_batch(results, batch_filenames, model, dataset)
+        coco_results += batch_coco_results  # aggregate final results
 
         # save image with bboxes if save_images is True and output_dir is provided
         if save_images:
@@ -199,5 +205,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, coco_meta, output_dir='output', save_images=True)
+    evaluate(model_path, coco_meta, output_dir='output', save_images=False)
 
