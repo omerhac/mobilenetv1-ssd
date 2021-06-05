@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import os
 from torchvision.io import read_image
 import torchvision
-
+import cv2
 
 class COCO(Dataset):
     """Class for storing COCO dataset image metadata"""
@@ -49,6 +49,14 @@ class COCO(Dataset):
         img_path = os.path.join(self.images_dir, self._file_names[item])
         image = read_image(img_path)
         image = image.type(torch.FloatTensor)  # convert to float32
+
+        # some images might be grayscale
+        if len(image.shape) < 3 or image.shape[0] != 3:
+            image = image.numpy()
+            image = image.transpose([1, 2, 0])  # tanspose to HWC for cv2
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+            image = image.transpose([2, 0, 1])  # tanspose batcb to CHW for model postprocessing
+            image = torch.tensor(image, dtype=torch.float32)
 
         # normalize to zero mean
         image -= 127.5

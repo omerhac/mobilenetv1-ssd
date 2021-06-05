@@ -67,10 +67,11 @@ def evaluate_results(detection_results, annotation_filepath):
 def postprocess_example_coco(image_name, image_boxes, image_labels, image_scores, dataset_meta):
     """Final postprocess for a single example. This is purely for generating the COCO result format.
     Args:
-        prediction_processed: output tensor from model prediction on a single image after generating the bbox relative
-                              coordinates and NMS. shape [num_bboxes, num_labels, num_scores]
         image_name: image name in dataset directory. i.e. 'xxxx.jpg'
-        dataset_meta: dataset object describing its metadata
+        image_boxes: relative bounding boxes coordinates as predicted by the model after model postprocessing
+        image_labels: category labels for each bounding box
+        image_scores: predicted class score for the predicted class at each bounding box
+        dataset: dataset object that has dataet metadata
     Returns:
         detection_results: [detection_result1, detection_result2, ...] where
                             detection result = {image_id, category_id, bbox, score} as requested in COCO
@@ -109,13 +110,17 @@ def postprocess_example_coco(image_name, image_boxes, image_labels, image_scores
 
 def postprocess_batch(model_predictions, batch_filenames, model, dataset):
     """All the postprocessing needed after generating raw model predictions"""
+
+    # perform NMS and get relative bbox coordinates from model predictions
     batch_processed = model.model_post_process(model_predictions)
     batch_boxes, batch_labels, batch_scores = batch_processed
 
+    # produce coco results format for each bounding box for each image
+    # it acts linearly on every image because image shape varies
     batch_coco_results = []
     for image_filename, image_boxes, image_labels, image_scores in zip(batch_filenames,
                                                                        batch_boxes, batch_labels, batch_scores):
-
+        # produce coco result for that image and aggregate
         image_coco_results = postprocess_example_coco(image_filename,
                                                       image_boxes, image_labels, image_scores, dataset)
         batch_coco_results += image_coco_results
@@ -150,13 +155,14 @@ def evaluate(model_path, dataset, batch_size=16, output_dir=None, save_images=Fa
 
     # predict
     for batch_idx in tqdm(range(len(loader))):
-        # load and preprocess batch of images
+        # load and preprocess batch of images (reshape, normalize and zero mean)
         batch_images, batch_filenames = next(loader)
 
-        # predict
+        # get DNN prediction
         results = model(batch_images)
 
         # postprocess
+        # do NMS, get relative bbox coordinates and then transform to COCO foramt
         batch_coco_results = postprocess_batch(results, batch_filenames, model, dataset)
         coco_results += batch_coco_results  # aggregate final results
 
