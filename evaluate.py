@@ -13,6 +13,9 @@ from pycocotools import coco
 from pycocotools.cocoeval import COCOeval
 import time
 from models.ssd_mobilenet_v1 import create_mobilenetv1_ssd
+from torchvision.io.image import decode_image
+import cv2
+import torchvision
 
 
 # disable source change warning
@@ -82,32 +85,72 @@ def postprocess_image_coco(image_name, image_boxes, image_labels, image_scores, 
     return detection_results
 
 
-def postprocess_batch(model_predictions, batch_filenames, model, dataset):
-    """All the postprocessing needed after generating raw model predictions.
-    Args:
-        model_predictions: raw model predictions
-        batch_filenames: filenames of the images fed to the model
-        model: the model
-        dataset: dataset object
-    Returns:
-        batch_coco_results: COCO formatted results -> {image_id, category_id, bbox, score}
-    """
+class Pipeline:
 
-    # perform NMS and get relative bbox coordinates from model predictions
-    batch_processed = model.model_post_process(model_predictions)
-    batch_boxes, batch_labels, batch_scores = batch_processed
+    def __init__(self, model, dataset, image_size=[300,300]):
+        self.image_size = image_size
+        self.model = model
+        self.dataset = dataset
 
-    # produce coco results format for each bounding box for each image
-    # it acts linearly on every image because of generated COCO format and because image shape varies
-    batch_coco_results = []
-    for image_filename, image_boxes, image_labels, image_scores in zip(batch_filenames,
-                                                                       batch_boxes, batch_labels, batch_scores):
-        # produce coco result for that image and aggregate
-        image_coco_results = postprocess_image_coco(image_filename,
-                                                    image_boxes, image_labels, image_scores, dataset)
-        batch_coco_results += image_coco_results
+    def preprocess(self, batch_bytes, batch_names):
+        # decode images
+        images = [decode_image(image_bytes) for image_bytes in batch_bytes]
 
-    return batch_coco_results
+        def reshape_and_scale(image):
+            """Helper function"""
+            image = image.type(torch.FloatTensor)  # convert to float32
+
+            # some images might be grayscale
+            if len(image.shape) < 3 or image.shape[0] != 3:
+                image = image.numpy()
+                image = image.transpose([1, 2, 0])  # tanspose to HWC for cv2
+                image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+                image = image.transpose([2, 0, 1])  # tanspose batcb to CHW for model postprocessing
+                image = torch.tensor(image, dtype=torch.float32)
+
+            # normalize to zero mean
+            image -= 127.5
+            image /= 127.5
+
+            return torchvision.transforms.Resize(size=self.image_size)(image)
+
+        images = [reshape_and_scale(image) for image in images]
+        return torch.stack(images, dim=0), batch_names
+
+    def model(self, batch_images):
+        return self.model(batch_images)
+
+    def postprocess(self, model_predictions, batch_filenames):
+        """All the postprocessing needed after generating raw model predictions.
+        Args:
+            model_predictions: raw model predictions
+            batch_filenames: filenames of the images fed to the model
+            dataset: dataset object
+        Returns:
+            batch_coco_results: COCO formatted results -> {image_id, category_id, bbox, score}
+        """
+
+        # perform NMS and get relative bbox coordinates from model predictions
+        batch_processed = self.model.model_post_process(model_predictions)
+        batch_boxes, batch_labels, batch_scores = batch_processed
+
+        # produce coco results format for each bounding box for each image
+        # it acts linearly on every image because of generated COCO format and because image shape varies
+        batch_coco_results = []
+        for image_filename, image_boxes, image_labels, image_scores in zip(batch_filenames,
+                                                                           batch_boxes, batch_labels, batch_scores):
+            # produce coco result for that image and aggregate
+            image_coco_results = postprocess_image_coco(image_filename,
+                                                        image_boxes, image_labels, image_scores, self.dataset)
+            batch_coco_results += image_coco_results
+
+        return batch_coco_results
+
+    def __call__(self, batch_bytes, batch_names):
+        batch_images, batch_names = self.preprocess(batch_bytes, batch_names)
+        model_predctions = self.model(batch_images)
+        batch_coco_results = self.postprocess(model_predctions, batch_names)
+        return batch_coco_results
 
 
 @torch.no_grad()
@@ -130,7 +173,9 @@ def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=Fa
     model.load_state_dict(torch.load(model_path))
 
     # prepare dataloader
-    loader = iter(torch.utils.data.DataLoader(dataset, batch_size=batch_size))
+    loader = iter(torch.utils.data.DataLoader(coco_data, batch_size=batch_size, collate_fn=lambda x: zip(*x)))
+    pipe = Pipeline(model, dataset)
+
     # prepare model for inference
     model.eval()
     coco_results = []
@@ -138,16 +183,13 @@ def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=Fa
     start_time = time.time()
 
     # predict
-    for batch_idx in tqdm(range(len(loader))):
-        # Data Loader loads and preprocesses batch of images (reshape, normalize and zero mean)
-        batch_images, batch_filenames = next(loader)
+    for batch_id in tqdm(range(len(loader))):
+        # Data Loader loads images bytes and filenames
+        batch_image_bytes, batch_image_names = next(loader)
 
-        # get DNN prediction
-        results = model(batch_images)
+        # move data through pipeline
+        batch_coco_results = pipe(batch_image_bytes, batch_image_names)
 
-        # postprocess
-        # do NMS, get relative bbox coordinates and then transform to COCO foramt
-        batch_coco_results = postprocess_batch(results, batch_filenames, model, dataset)
         coco_results += batch_coco_results  # aggregate final results
 
         # save images with bboxes if save_images is True and output_dir is provided
@@ -204,7 +246,7 @@ def draw_bboxed_images(batch_coco_results, images_dir, dataset, output_dir):
 
 
 if __name__ == '__main__':
-    coco_meta = COCO('datasets/val2017', 'datasets/annotations/instances_val2017.json', 'coco_labels.txt')
+    coco_data = COCO('datasets/val2017', 'datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     model_path = 'trained_models/mobilenetv1-ssd.pt'
     images_dir = 'datasets/val2017'
 
@@ -212,5 +254,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, coco_meta, batch_size=32, output_dir='output', save_images=False)
+    evaluate(model_path, coco_data, batch_size=32, output_dir='output', save_images=False)
 
