@@ -2,9 +2,6 @@ import json
 import torch
 from torch.utils.data import Dataset
 import os
-from torchvision.io import read_image
-import torchvision
-import cv2
 from torchvision.io.image import read_file
 
 class COCO(Dataset):
@@ -58,6 +55,4 @@ class COCO(Dataset):
 if __name__ == '__main__':
     data = COCO('datasets/val2017', 'datasets/annotations/instances_val2017.json', 'coco_labels.txt')
     data_loader = torch.utils.data.DataLoader(data, batch_size=64, collate_fn=lambda x: x)
-    d = next(iter(data_loader))
-    print(d)
 
