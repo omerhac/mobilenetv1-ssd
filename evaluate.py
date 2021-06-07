@@ -263,9 +263,5 @@ if __name__ == '__main__':
     model_path = 'trained_models/mobilenetv1-ssd.pt'
     images_dir = 'datasets/val2017'
 
-    # create output dir
-    if not os.path.exists('output'):
-        os.mkdir('output')
-
-    evaluate(model_path, coco_data, batch_size=32, coco_val=True, images_dir='datasets/val2017')
+    evaluate(model_path, coco_data, batch_size=32, coco_val=True)
 
