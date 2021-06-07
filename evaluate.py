@@ -86,13 +86,21 @@ def postprocess_image_coco(image_name, image_boxes, image_labels, image_scores, 
 
 
 class Pipeline:
+    """COCO inference pipeline"""
+    def __init__(self, model, dataset, image_size=[300, 300]):
+        """Initializes a pipeline.
+        Args:
+            model: MobilenetV1-SSD instance
+            dataset: COCO dataset object
+            image_size: image size to reshape the images to
+        """
 
-    def __init__(self, model, dataset, image_size=[300,300]):
         self.image_size = image_size
         self.model = model
         self.dataset = dataset
 
     def preprocess(self, batch_bytes, batch_names):
+        """Decode images from image bytes, reshape and normalize to [-1, 1]"""
         # decode images
         images = [decode_image(image_bytes) for image_bytes in batch_bytes]
 
@@ -118,6 +126,7 @@ class Pipeline:
         return torch.stack(images, dim=0), batch_names
 
     def model(self, batch_images):
+        """Forward pass"""
         return self.model(batch_images)
 
     def postprocess(self, model_predictions, batch_filenames):
@@ -125,7 +134,6 @@ class Pipeline:
         Args:
             model_predictions: raw model predictions
             batch_filenames: filenames of the images fed to the model
-            dataset: dataset object
         Returns:
             batch_coco_results: COCO formatted results -> {image_id, category_id, bbox, score}
         """
@@ -147,6 +155,7 @@ class Pipeline:
         return batch_coco_results
 
     def __call__(self, batch_bytes, batch_names):
+        """Full pass through the pipeline, preprocess, model forward pass and postprocess"""
         batch_images, batch_names = self.preprocess(batch_bytes, batch_names)
         model_predctions = self.model(batch_images)
         batch_coco_results = self.postprocess(model_predctions, batch_names)
@@ -203,13 +212,11 @@ def evaluate(model_path, dataset, batch_size=32, output_dir=None, save_images=Fa
     if output_dir:
         with open(f'{output_dir}/detection_results.json', 'w') as file:
             json.dump(coco_results, file)
-
         # evaluate metrics
         evaluate_results(f'{output_dir}/detection_results.json', dataset.annotaion_filepath)
     else:
         with open('.detection_results_temp.json', 'w') as file:
             json.dump(coco_results, file)
-
         # evaluate metrics
         evaluate_results('.detection_results_temp.json', dataset.annotaion_filepath)
         os.remove('.detection_results_temp.json')
