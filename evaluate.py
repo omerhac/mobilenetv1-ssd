@@ -16,6 +16,7 @@ from models.ssd_mobilenet_v1 import create_mobilenetv1_ssd
 from torchvision.io.image import decode_image
 import cv2
 import torchvision
+import torch.autograd.profiler as profiler
 
 
 # disable source change warning
@@ -136,9 +137,12 @@ class Pipeline:
 
     def __call__(self, batch_bytes):
         """Full pass through the pipeline, preprocess, model forward pass and postprocess"""
-        batch_images, batch_shapes = self.preprocess(batch_bytes)
-        model_predictions = self.model(batch_images)
-        batch_coco_results = self.postprocess(model_predictions, batch_shapes)
+        with profiler.record_function('preprocess'):
+            batch_images, batch_shapes = self.preprocess(batch_bytes)
+        with profiler.record_function('model_call'):
+            model_predictions = self.model(batch_images)
+        with profiler.record_function('postprocess'):
+            batch_coco_results = self.postprocess(model_predictions, batch_shapes)
         return batch_coco_results
 
     @staticmethod
@@ -166,14 +170,15 @@ class Pipeline:
 
 
 @torch.no_grad()
-def evaluate(model_path, dataset, batch_size=32, coco_val=False, images_dir=None):
+def evaluate(model_path, dataset, batch_size=32, num_batches=None, coco_val=False, images_dir=None):
     """Main benchmark method.
     Args:
         model_path: path to serialized model
         dataset: dataset pytorch object
         batch_size: batch size
+        num_batches: OPTIONAL, number of batches to predict from the dataset, whole dataset is used if not provided
         coco_val: flag, whether the dataset is COCO validation, to benchmark detections accuracy
-        images_dir: OPTIONAL, directory of input images. requested only if bounding box drawing is required.
+        images_dir: OPTIONAL, directory of input images. requested only if bounding box drawing is required
     """
 
     start_time = time.time()
@@ -191,21 +196,25 @@ def evaluate(model_path, dataset, batch_size=32, coco_val=False, images_dir=None
     # prepare model for inference
     model.eval()
     bbox_results, label_results, score_results = [], [], []
+    num_batches = num_batches if num_batches else len(loader)
     print(f'Finished loading model in {time.time() - start_time} seconds.')
     start_time = time.time()
 
-    # predict
-    for batch_id in tqdm(range(len(loader))):
-        # Data Loader loads images bytes
-        batch_image_bytes = next(loader)
+    # initiate profiler
+    with profiler.profile(profile_memory=True, record_shapes=True) as prof:
+        # predict
+        for batch_id in tqdm(range(num_batches)):
+            # Data Loader loads images bytes
+            batch_image_bytes = next(loader)
 
-        # move data through pipeline
-        batch_bbox, batch_labels, batch_scores = pipe(batch_image_bytes)
+            with profiler.record_function('whole_pipe'):
+                # move data through pipeline
+                batch_bbox, batch_labels, batch_scores = pipe(batch_image_bytes)
 
-        bbox_results += batch_bbox  # aggregate final results
-        label_results += batch_labels
-        score_results += batch_scores
-
+            bbox_results += batch_bbox  # aggregate final results
+            label_results += batch_labels
+            score_results += batch_scores
+    prof.export_chrome_trace('profiler_trace.json')
     print(f'Finished inference in {time.time() - start_time} seconds.')
 
     if coco_val:
@@ -263,5 +272,5 @@ if __name__ == '__main__':
     model_path = 'trained_models/mobilenetv1-ssd.pt'
     images_dir = 'datasets/val2017'
 
-    evaluate(model_path, coco_data, batch_size=32, coco_val=True)
+    evaluate(model_path, coco_data, batch_size=16, num_batches=2, coco_val=False)
 
