@@ -10,7 +10,7 @@ from models.utils import BatchNorm2d
 from models.utils import BiasAdd
 from models.utils import nms
 from models.utils import decode_boxes
-
+from torch.autograd.profiler import record_function
 
 def conv_bn(inp, oup, stride):
     return nn.Sequential(
@@ -204,13 +204,16 @@ class SSD(nn.Module):
             [list_boxes, list_labels, list_scores] = boxes labels and scores after NMS
         """
 
-        scores, boxes = self.generate_boxes_and_scores(model_predictions)
-        list_boxes=[]; list_labels=[]; list_scores=[]
-        for b in range(len(scores)):
-            bboxes, blabels, bscores = self.filter_results(scores[b], boxes[b])
-            list_boxes.append(bboxes)
-            list_labels.append(blabels.long())
-            list_scores.append(bscores)
+        with record_function('bounding_box_finetuning'):
+            scores, boxes = self.generate_boxes_and_scores(model_predictions)
+
+        with record_function('nms'):
+            list_boxes=[]; list_labels=[]; list_scores=[]
+            for b in range(len(scores)):
+                bboxes, blabels, bscores = self.filter_results(scores[b], boxes[b])
+                list_boxes.append(bboxes)
+                list_labels.append(blabels.long())
+                list_scores.append(bscores)
 
         return [list_boxes, list_labels, list_scores]
 

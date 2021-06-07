@@ -90,8 +90,10 @@ class Pipeline:
         Returns:
             images, [images_shape]: stacked batch images and list of images shapes
         """
+
         # decode images
-        images = [decode_image(image_bytes) for image_bytes in batch_bytes]
+        with profiler.record_function('image_decoding'):
+            images = [decode_image(image_bytes) for image_bytes in batch_bytes]
 
         def reshape_and_scale(image):
             """Helper function"""
@@ -111,7 +113,9 @@ class Pipeline:
 
             return torchvision.transforms.Resize(size=self.image_size)(image), image.shape
 
-        images, images_shapes = zip(*[reshape_and_scale(image) for image in images])
+        with profiler.record_function('resize_and_normalize'):
+            images, images_shapes = zip(*[reshape_and_scale(image) for image in images])
+
         return torch.stack(images, dim=0), images_shapes
 
     def model(self, batch_images):
@@ -137,11 +141,11 @@ class Pipeline:
 
     def __call__(self, batch_bytes):
         """Full pass through the pipeline, preprocess, model forward pass and postprocess"""
-        with profiler.record_function('preprocess'):
+        with profiler.record_function('preprocessing'):
             batch_images, batch_shapes = self.preprocess(batch_bytes)
-        with profiler.record_function('model_call'):
+        with profiler.record_function('model'):
             model_predictions = self.model(batch_images)
-        with profiler.record_function('postprocess'):
+        with profiler.record_function('postprocessing'):
             batch_coco_results = self.postprocess(model_predictions, batch_shapes)
         return batch_coco_results
 
