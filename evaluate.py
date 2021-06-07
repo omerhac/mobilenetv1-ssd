@@ -151,7 +151,7 @@ class Pipeline:
         Returns:
             [transformed_boxes]: image boxes transformed into absolute coordinates
         """
-        _, width, height = shape
+        _, height, width = shape
         transformed_boxes = []
         for box in boxes:
             # round to nearest tenth of a pixel to reduce result file size
@@ -166,14 +166,14 @@ class Pipeline:
 
 
 @torch.no_grad()
-def evaluate(model_path, dataset, batch_size=32, coco_val=False, save_images=False):
+def evaluate(model_path, dataset, batch_size=32, coco_val=False, images_dir=None):
     """Main benchmark method.
     Args:
         model_path: path to serialized model
         dataset: dataset pytorch object
         batch_size: batch size
         coco_val: flag, whether the dataset is COCO validation, to benchmark detections accuracy
-        save_images: flag, whether to save images with bboxes
+        images_dir: OPTIONAL, directory of input images. requested only if bounding box drawing is required.
     """
 
     start_time = time.time()
@@ -206,11 +206,6 @@ def evaluate(model_path, dataset, batch_size=32, coco_val=False, save_images=Fal
         label_results += batch_labels
         score_results += batch_scores
 
-        # save images with bboxes if save_images is True and output_dir is provided
-        if save_images:
-            assert output_dir, 'output_dir should be provided for saving images with bboxes'
-            draw_bboxed_images(batch_coco_results, images_dir, dataset, output_dir)
-
     print(f'Finished inference in {time.time() - start_time} seconds.')
 
     if coco_val:
@@ -222,32 +217,39 @@ def evaluate(model_path, dataset, batch_size=32, coco_val=False, save_images=Fal
         # evaluate metrics
         with open('.detection_results_temp.json', 'w') as file:
             json.dump(coco_results, file)
-        evaluate_results('.detection_results_temp.json', dataset.annotaion_filepath)
+        #evaluate_results('.detection_results_temp.json', dataset.annotaion_filepath)
         os.remove('.detection_results_temp.json')
 
+        # draw bounding boxes if requested
+        if images_dir:
+            draw_bboxed_images(coco_results, images_dir, dataset, images_dir +'/output')
 
-def draw_bboxed_images(batch_coco_results, images_dir, dataset, output_dir):
+
+def draw_bboxed_images(coco_results, images_dir, dataset, output_dir):
     """Save images with bounding boxes as depicted in the COCO results"""
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
     # dict for grouping coco detection results per image
-    batch_detection_dict = defaultdict(lambda: {
+    detections_dict = defaultdict(lambda: {
         'boxes': [],
         'labels': [],
         'scores': []
     })
-    for detection in batch_coco_results:
+    for detection in coco_results:
         # transform boxes to drawing format
         box = transform_coco_box_for_drawing(detection['bbox'])
         # append bounding box data
-        batch_detection_dict[detection['image_id']]['boxes'].append(box)
-        batch_detection_dict[detection['image_id']]['labels'].append(detection['category_id'])
-        batch_detection_dict[detection['image_id']]['scores'].append(detection['score'])
+        detections_dict[detection['image_id']]['boxes'].append(box)
+        detections_dict[detection['image_id']]['labels'].append(detection['category_id'])
+        detections_dict[detection['image_id']]['scores'].append(detection['score'])
 
-    for image_id in batch_detection_dict.keys():
+    for image_id in detections_dict.keys():
         image_filename = dataset.image_id_to_filename[image_id]
         try:
-            image_boxes = batch_detection_dict[image_id]['boxes']
-            image_labels = batch_detection_dict[image_id]['labels']
-            image_scores = batch_detection_dict[image_id]['scores']
+            image_boxes = detections_dict[image_id]['boxes']
+            image_labels = detections_dict[image_id]['labels']
+            image_scores = detections_dict[image_id]['scores']
             # draw all of the images bounding boxes
             image = np.array(Image.open(os.path.join(images_dir, image_filename)).convert("RGB"))
             drawn_image = draw_boxes(image, image_boxes, image_labels, image_scores, dataset.class_names)
@@ -265,5 +267,5 @@ if __name__ == '__main__':
     if not os.path.exists('output'):
         os.mkdir('output')
 
-    evaluate(model_path, coco_data, batch_size=32, coco_val=True, save_images=False)
+    evaluate(model_path, coco_data, batch_size=32, coco_val=True, images_dir='datasets/val2017')
 
