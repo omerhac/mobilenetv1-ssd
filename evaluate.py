@@ -217,7 +217,7 @@ def evaluate(model_path, dataset, batch_size=32, coco_val=False, images_dir=None
         # evaluate metrics
         with open('.detection_results_temp.json', 'w') as file:
             json.dump(coco_results, file)
-        #evaluate_results('.detection_results_temp.json', dataset.annotaion_filepath)
+        evaluate_results('.detection_results_temp.json', dataset.annotaion_filepath)
         os.remove('.detection_results_temp.json')
 
         # draw bounding boxes if requested
