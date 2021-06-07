@@ -19,7 +19,6 @@ class COCO(Dataset):
         self.annotaion_filepath = annotation_filepath
         self.images_dir = images_dir
         self._file_names = []
-        self.image_id_to_filename = {}
 
         # get labels
         with open(labels_filepath) as file:
@@ -41,12 +40,11 @@ class COCO(Dataset):
                 'height': image_data['height']
             }
             self._file_names.append(image_data['file_name'])
-            self.image_id_to_filename[image_data['id']] = image_data['file_name']
 
     def __getitem__(self, item):
         img_path = os.path.join(self.images_dir, self._file_names[item])
         image = read_file(img_path)
-        return image, self._file_names[item]
+        return image
 
     def __len__(self):
         return len(self._file_names)
