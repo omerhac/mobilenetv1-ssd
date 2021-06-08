@@ -155,16 +155,21 @@ class SSD(nn.Module):
         Returns:
             results: [prediction_head1_pred, prediction_head2_pred, ...., prediction_headn_pred]
         """
-        feature_maps = self.backbone(x)
+
+        with record_function('backbone_forward'):
+            feature_maps = self.backbone(x)
 
         out = feature_maps[-1]
-        for module in self.extras:
-            out = module(out)
-            feature_maps.append(out)
+
+        with record_function('extra_modules_forward'):
+            for module in self.extras:
+                out = module(out)
+                feature_maps.append(out)
 
         results = []
-        for feature, module in zip(feature_maps, self.predictors):
-            results.append(module(feature))
+        with record_function('box_predictors_forward'):
+            for feature, module in zip(feature_maps, self.predictors):
+                results.append(module(feature))
 
         return results
 
@@ -201,7 +206,7 @@ class SSD(nn.Module):
                                 the models prediction heads. i.e. len(model_predictions) = num_prediction_heads.
                                 each model_prediction = [class_logits, bbox_reg]
         Return:
-            [list_boxes, list_labels, list_scores] = boxes labels and scores after NMS
+            [list_boxes, list_labels, list_scores] = boxes, labels and scores after NMS
         """
 
         with record_function('bounding_box_finetuning'):

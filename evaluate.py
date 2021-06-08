@@ -135,7 +135,8 @@ class Pipeline:
         batch_processed = self.model.model_post_process(model_predictions)
         batch_boxes, batch_labels, batch_scores = batch_processed
         # transform relative coordinates into absolute ones
-        batch_boxes = [self.process_box(boxes, shape) for (boxes, shape) in zip(batch_boxes, batch_shapes)]
+        with profiler.record_function('bounding_box_transformation'):
+            batch_boxes = [self.process_box(boxes, shape) for (boxes, shape) in zip(batch_boxes, batch_shapes)]
 
         return batch_boxes, batch_labels, batch_scores
 
@@ -151,8 +152,8 @@ class Pipeline:
 
     @staticmethod
     def process_box(boxes, shape):
-        """"Process boxes (comes from model as xmax, ymax, xmin, ymin). Process relative coordinates into
-        absolute ones.
+        """"Process boxes (comes from model as xmax, ymax, xmin, ymin [relative]). Process relative coordinates into
+        absolute ones (xmin, ymin, widh, height [absolute]).
         Args:
             boxes: image predicted bounding boxes with relative coordinates
             shape: original image shape before resizing
@@ -218,6 +219,7 @@ def evaluate(model_path, dataset, batch_size=32, num_batches=None, coco_val=Fals
             bbox_results += batch_bbox  # aggregate final results
             label_results += batch_labels
             score_results += batch_scores
+
     prof.export_chrome_trace('profiler_trace.json')
     print(f'Finished inference in {time.time() - start_time} seconds.')
 
